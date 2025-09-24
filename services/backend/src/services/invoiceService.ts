@@ -16,7 +16,11 @@ interface InvoiceRow {
 class InvoiceService {
   static async list( userId: string, status?: string, operator?: string): Promise<Invoice[]> {
     let q = db<InvoiceRow>('invoices').where({ userId: userId });
-    if (status) q = q.andWhereRaw(" status "+ operator + " '"+ status +"'");
+    if (status) {
+      let safeoperator = operator;
+      if (safeoperator !== '=' && safeoperator !== '!=') safeoperator = '=';
+      q = q.andWhere('status', safeoperator, status);
+    }
     const rows = await q.select();
     const invoices = rows.map(row => ({
       id: row.id,
