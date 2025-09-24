@@ -1,22 +1,19 @@
 import { Router } from 'express';
 import routes from '../controllers/authController';
+import authenticateJWT from '../middleware/authenticateJWT';
 
 const router = Router();
 
-// POST /auth to create a new user
-// This route is typically used for user registration
+// MITIGACIÓN: proteger rutas sensibles con autenticación
+// Registro de usuario sigue siendo público (no requiere autenticación)
 router.post('/', routes.createUser);
 
-// PUT /auth/:id to update an existing user
-// This route is typically used for updating user details
-router.put('/:id', routes.updateUser);
+// Actualización de usuario protegida con JWT
+router.put('/:id', authenticateJWT, routes.updateUser);
 
-
-
-
-//router.get('/:id/picture', routes.getUser);
-//router.post('/:id/picture', routes.getUser);
-//router.delete('/:id/picture', routes.getUser);
-
+// Si en el futuro agregas rutas de perfil, también deben ir protegidas:
+// router.get('/:id/picture', authenticateJWT, routes.getUser);
+// router.post('/:id/picture', authenticateJWT, routes.getUser);
+// router.delete('/:id/picture', authenticateJWT, routes.getUser);
 
 export default router;
