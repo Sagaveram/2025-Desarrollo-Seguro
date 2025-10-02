@@ -15,7 +15,15 @@ export const authenticateJWT = (req: Request, res: Response, next: NextFunction)
   const token = authHeader.split(' ')[1];
 
   try {
-    const decoded = jwt.verify(token, "secreto_super_seguro");
+    // MITIGACION: usar variable de entorno para el secreto JWT
+    // Esto centraliza la configuración y evita secretos hardcodeados en el código fuente.
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      console.error(" JWT_SECRET no está configurado en el entorno.");
+      return res.status(500).json({ message: 'Server misconfiguration: missing JWT secret' });
+    }
+
+    const decoded = jwt.verify(token, jwtSecret) as JwtPayload;
     (req as any).user = decoded;
     next();
   } catch (err) {

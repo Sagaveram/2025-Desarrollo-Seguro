@@ -1,13 +1,15 @@
-
+// src/services/authService.ts
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import db from '../db';
-import { User,UserRow } from '../types/user';
+import { User, UserRow } from '../types/user';
 import jwtUtils from '../utils/jwt';
 import ejs from 'ejs';
+import bcrypt from 'bcrypt';
 
-const RESET_TTL = 1000 * 60 * 60;         // 1h
+const RESET_TTL = 1000 * 60 * 60;          // 1h
 const INVITE_TTL = 1000 * 60 * 60 * 24 * 7; // 7d
+const SALT_ROUNDS = 12;
 
 class AuthService {
 
@@ -17,40 +19,52 @@ class AuthService {
       .orWhere({ email: user.email })
       .first();
     if (existing) throw new Error('User already exists with that username or email');
-    // create invite token
+
+    // Hash seguro de contraseña antes de guardar
+    const hashedPassword = await bcrypt.hash(user.password, SALT_ROUNDS);
+
     const invite_token = crypto.randomBytes(6).toString('hex');
     const invite_token_expires = new Date(Date.now() + INVITE_TTL);
-    await db<UserRow>('users')
-      .insert({
-        username: user.username,
-        password: user.password,
-        email: user.email,
-        first_name: user.first_name,
-        last_name:  user.last_name,
-        invite_token,
-        invite_token_expires,
-        activated: false
-      });
-      // send invite email using nodemailer and local SMTP server
+
+    await db<UserRow>('users').insert({
+      username: user.username,
+      password: hashedPassword,
+      email: user.email,
+      first_name: user.first_name,
+      last_name:  user.last_name,
+      invite_token,
+      invite_token_expires,
+      activated: false
+    });
+
+    //transporter seguro usando variables de entorno
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT),
+      port: parseInt(process.env.SMTP_PORT || '587'),
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS
       }
     });
-    const link = `${process.env.FRONTEND_URL}/activate-user?token=${invite_token}&username=${user.username}`;
-   
+
+    const link = `${process.env.FRONTEND_URL}/activate-user?token=${invite_token}&username=${encodeURIComponent(user.username)}`;
+
+    //escapado de datos de usuario en el template para prevenir XSS
+    //usar ejs.render con un template seguro y pasar los datos como variables.
     const template = `
       <html>
         <body>
-          <h1>Hello ${user.first_name} ${user.last_name}</h1>
-          <p>Click <a href="${ link }">here</a> to activate your account.</p>
+          <h1>Hello <%= first_name %> <%= last_name %></h1>
+          <p>Click <a href="<%= link %>">here</a> to activate your account.</p>
         </body>
       </html>`;
-    const htmlBody = ejs.render(template);
-    
+
+    const htmlBody = ejs.render(template, {
+      first_name: user.first_name,
+      last_name: user.last_name,
+      link
+    });
+
     await transporter.sendMail({
       from: "info@example.com",
       to: user.email,
@@ -60,19 +74,21 @@ class AuthService {
   }
 
   static async updateUser(user: User) {
-    const existing = await db<UserRow>('users')
-      .where({ id: user.id })
-      .first();
+    const existing = await db<UserRow>('users').where({ id: user.id }).first();
     if (!existing) throw new Error('User not found');
+
+    const hashedPassword = await bcrypt.hash(user.password, SALT_ROUNDS);
+
     await db<UserRow>('users')
       .where({ id: user.id })
       .update({
         username: user.username,
-        password: user.password,
+        password: hashedPassword,
         email: user.email,
         first_name: user.first_name,
         last_name: user.last_name
       });
+
     return existing;
   }
 
@@ -81,8 +97,13 @@ class AuthService {
       .where({ username })
       .andWhere('activated', true)
       .first();
+
     if (!user) throw new Error('Invalid email or not activated');
-    if (password != user.password) throw new Error('Invalid password');
+
+    //comparacion segura usando bcrypt
+    const passwordMatch = await bcrypt.compare(password, user.password);
+    if (!passwordMatch) throw new Error('Invalid password');
+
     return user;
   }
 
@@ -103,7 +124,6 @@ class AuthService {
         reset_password_expires: expires
       });
 
-    // send email with reset link using nodemailer and local SMTP server
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT || '587'),
@@ -126,12 +146,15 @@ class AuthService {
       .where('reset_password_token', token)
       .andWhere('reset_password_expires', '>', new Date())
       .first();
+
     if (!row) throw new Error('Invalid or expired reset token');
+
+    const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
 
     await db('users')
       .where({ id: row.id })
       .update({
-        password: newPassword,
+        password: hashedPassword,
         reset_password_token: null,
         reset_password_expires: null
       });
@@ -142,11 +165,14 @@ class AuthService {
       .where('invite_token', token)
       .andWhere('invite_token_expires', '>', new Date())
       .first();
+
     if (!row) throw new Error('Invalid or expired invite token');
+
+    const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
 
     await db('users')
       .update({
-        password: newPassword,
+        password: hashedPassword,
         invite_token: null,
         invite_token_expires: null
       })
@@ -159,3 +185,4 @@ class AuthService {
 }
 
 export default AuthService;
+
