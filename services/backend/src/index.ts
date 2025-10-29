@@ -1,6 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import path from 'path';
 
 import { setupSwagger } from './swagger'
 
@@ -13,11 +14,7 @@ import invoiceRoutes from './routes/invoices.routes';
 import authMiddleware from './middleware/auth.middleware';
 import errorHandler from './middleware/errorHandler';
 
-
-
-
-
-dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 const app = express();
 
 // Permitir cualquier origen
@@ -34,7 +31,6 @@ app.use('/auth', authRoutes);
 // Protect everything below
 app.use(authMiddleware);
 
-
 app.use('/clinical-history', clinicalHistoryRoutes);
 app.use('/invoices', invoiceRoutes);
 
@@ -46,11 +42,5 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📖 Swagger UI: http://localhost:${PORT}/api-docs`)
 });
-
-
-
-
-
-
 
 export default app;

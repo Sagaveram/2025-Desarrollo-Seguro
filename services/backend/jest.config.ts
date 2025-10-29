@@ -1,4 +1,3 @@
-// jest.config.ts
 import type { JestConfigWithTsJest } from 'ts-jest';
 
 const config: JestConfigWithTsJest = {
@@ -6,7 +5,7 @@ const config: JestConfigWithTsJest = {
   testEnvironment: 'node',
   rootDir: '.',
   moduleFileExtensions: ['ts', 'js', 'json'],
-  testMatch: ['<rootDir>/test/**/*.test.ts'],
+  testMatch: ['<rootDir>/test/**/*.test.(ts|js)'],
   collectCoverage: true,
   coverageDirectory: 'coverage',
   moduleNameMapper: {

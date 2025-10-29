@@ -1,67 +1,59 @@
-// src/services/authService.ts
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import db from '../db';
 import { User, UserRow } from '../types/user';
 import jwtUtils from '../utils/jwt';
 import ejs from 'ejs';
-import bcrypt from 'bcrypt';
 
-const RESET_TTL = 1000 * 60 * 60;          // 1h
-const INVITE_TTL = 1000 * 60 * 60 * 24 * 7; // 7d
-const SALT_ROUNDS = 12;
+// Reset y Invite token TTL en ms
+const RESET_TTL = 1000 * 60 * 60;
+const INVITE_TTL = 1000 * 60 * 60 * 24 * 7;
 
 class AuthService {
-
+  /**
+   * Crea un usuario y envía el mail de invitación con template seguro (NO vulnerable a template injection).
+   */
   static async createUser(user: User) {
     const existing = await db<UserRow>('users')
       .where({ username: user.username })
       .orWhere({ email: user.email })
       .first();
     if (existing) throw new Error('User already exists with that username or email');
-
-    // Hash seguro de contraseña antes de guardar
-    const hashedPassword = await bcrypt.hash(user.password, SALT_ROUNDS);
-
     const invite_token = crypto.randomBytes(6).toString('hex');
     const invite_token_expires = new Date(Date.now() + INVITE_TTL);
+    await db<UserRow>('users')
+      .insert({
+        username: user.username,
+        password: user.password,
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        invite_token,
+        invite_token_expires,
+        activated: false
+      });
 
-    await db<UserRow>('users').insert({
-      username: user.username,
-      password: hashedPassword,
-      email: user.email,
-      first_name: user.first_name,
-      last_name:  user.last_name,
-      invite_token,
-      invite_token_expires,
-      activated: false
-    });
-
-    //transporter seguro usando variables de entorno
+    // Mail seguro: solo variables, no ejecuta código
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT || '587'),
+      port: parseInt(process.env.SMTP_PORT),
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS
       }
     });
 
-    const link = `${process.env.FRONTEND_URL}/activate-user?token=${invite_token}&username=${encodeURIComponent(user.username)}`;
-
-    //escapado de datos de usuario en el template para prevenir XSS
-    //usar ejs.render con un template seguro y pasar los datos como variables.
+    const link = `${process.env.FRONTEND_URL}/activate-user?token=${invite_token}&username=${user.username}`;
     const template = `
       <html>
         <body>
-          <h1>Hello <%= first_name %> <%= last_name %></h1>
+          <h1>Hello <%= firstName %> <%= lastName %></h1>
           <p>Click <a href="<%= link %>">here</a> to activate your account.</p>
         </body>
       </html>`;
-
     const htmlBody = ejs.render(template, {
-      first_name: user.first_name,
-      last_name: user.last_name,
+      firstName: user.first_name,
+      lastName: user.last_name,
       link
     });
 
@@ -73,40 +65,54 @@ class AuthService {
     });
   }
 
+  /**
+   * Actualiza los datos de un usuario existente.
+   */
   static async updateUser(user: User) {
-    const existing = await db<UserRow>('users').where({ id: user.id }).first();
+    const existing = await db<UserRow>('users')
+      .where({ id: user.id })
+      .first();
     if (!existing) throw new Error('User not found');
-
-    const hashedPassword = await bcrypt.hash(user.password, SALT_ROUNDS);
-
     await db<UserRow>('users')
       .where({ id: user.id })
       .update({
         username: user.username,
-        password: hashedPassword,
+        password: user.password,
         email: user.email,
         first_name: user.first_name,
         last_name: user.last_name
       });
-
     return existing;
   }
 
+  /**
+   * Autentica usuario por username y password, sólo si está activado.
+   */
   static async authenticate(username: string, password: string) {
     const user = await db<UserRow>('users')
       .where({ username })
       .andWhere('activated', true)
       .first();
 
+    console.log('[DEBUG auth]', {
+      DB_HOST: process.env.DB_HOST,
+      DB_PORT: process.env.DB_PORT,
+      DB_NAME: process.env.DB_NAME,
+      username,
+      found: !!user,
+      activated: user?.activated,
+      storedPwd: user?.password,
+      providedPwd: password
+    });
+
     if (!user) throw new Error('Invalid email or not activated');
-
-    //comparacion segura usando bcrypt
-    const passwordMatch = await bcrypt.compare(password, user.password);
-    if (!passwordMatch) throw new Error('Invalid password');
-
+    if (password != user.password) throw new Error('Invalid password');
     return user;
   }
 
+  /**
+   * Envía mail de recuperación de contraseña.
+   */
   static async sendResetPasswordEmail(email: string) {
     const user = await db<UserRow>('users')
       .where({ email })
@@ -141,48 +147,50 @@ class AuthService {
     });
   }
 
+  /**
+   * Permite cambiar la contraseña si el token es válido.
+   */
   static async resetPassword(token: string, newPassword: string) {
     const row = await db<UserRow>('users')
       .where('reset_password_token', token)
       .andWhere('reset_password_expires', '>', new Date())
       .first();
-
     if (!row) throw new Error('Invalid or expired reset token');
-
-    const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
 
     await db('users')
       .where({ id: row.id })
       .update({
-        password: hashedPassword,
+        password: newPassword,
         reset_password_token: null,
         reset_password_expires: null
       });
   }
 
+  /**
+   * Permite al usuario establecer la clave por primera vez usando el token de invitación.
+   */
   static async setPassword(token: string, newPassword: string) {
     const row = await db<UserRow>('users')
       .where('invite_token', token)
       .andWhere('invite_token_expires', '>', new Date())
       .first();
-
     if (!row) throw new Error('Invalid or expired invite token');
-
-    const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
 
     await db('users')
       .update({
-        password: hashedPassword,
+        password: newPassword,
         invite_token: null,
         invite_token_expires: null
       })
       .where({ id: row.id });
   }
 
+  /**
+   * Genera el JWT para el usuario.
+   */
   static generateJwt(userId: string): string {
     return jwtUtils.generateToken(userId);
   }
 }
 
 export default AuthService;
-

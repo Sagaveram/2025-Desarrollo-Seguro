@@ -99,7 +99,7 @@ class InvoiceService {
 export default InvoiceService;
 
 /*
-  static async verifyOwner(userId: string, invoiceId: string): Promise<void> {
+  static async verifyOwner(userId: string, invoiceId: string): Promise<void>{ 
     const invoice = await db<InvoiceRow>('invoices')
       .where({ id: invoiceId })
       .first();
