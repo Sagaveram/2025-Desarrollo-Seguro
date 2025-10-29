@@ -1,23 +1,26 @@
-
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import db from '../db';
-import { User,UserRow } from '../types/user';
+import { User, UserRow } from '../types/user';
 import jwtUtils from '../utils/jwt';
 import ejs from 'ejs';
 
-const RESET_TTL = 1000 * 60 * 60;         // 1h
-const INVITE_TTL = 1000 * 60 * 60 * 24 * 7; // 7d
+// Constantes de tiempo para tokens
+const RESET_TTL = 1000 * 60 * 60;
+const INVITE_TTL = 1000 * 60 * 60 * 24 * 7;
 
 class AuthService {
-
+  /**
+   * Crea un usuario y envía el mail de invitación.
+   * VULNERABLE: El HTML del mail usa interpolación directa, permitiendo template injection.
+   * Este código debe estar en main para que el test de seguridad falle.
+   */
   static async createUser(user: User) {
     const existing = await db<UserRow>('users')
       .where({ username: user.username })
       .orWhere({ email: user.email })
       .first();
     if (existing) throw new Error('User already exists with that username or email');
-    // create invite token
     const invite_token = crypto.randomBytes(6).toString('hex');
     const invite_token_expires = new Date(Date.now() + INVITE_TTL);
     await db<UserRow>('users')
@@ -26,12 +29,13 @@ class AuthService {
         password: user.password,
         email: user.email,
         first_name: user.first_name,
-        last_name:  user.last_name,
+        last_name: user.last_name,
         invite_token,
         invite_token_expires,
         activated: false
       });
-      // send invite email using nodemailer and local SMTP server
+
+    // VULNERABLE: inserta datos de usuario directo en HTML (template injection posible)
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT),
@@ -40,17 +44,18 @@ class AuthService {
         pass: process.env.SMTP_PASS
       }
     });
+
     const link = `${process.env.FRONTEND_URL}/activate-user?token=${invite_token}&username=${user.username}`;
-   
-    const template = `
+    // OJO: Esto ejecuta código EJS si viene en el dato
+    const htmlBody = `
       <html>
         <body>
           <h1>Hello ${user.first_name} ${user.last_name}</h1>
-          <p>Click <a href="${ link }">here</a> to activate your account.</p>
+          <p>Click <a href="${link}">here</a> to activate your account.</p>
         </body>
-      </html>`;
-    const htmlBody = ejs.render(template);
-    
+      </html>
+    `;
+
     await transporter.sendMail({
       from: "info@example.com",
       to: user.email,
@@ -59,6 +64,7 @@ class AuthService {
     });
   }
 
+  // El resto de los métodos igual que antes (seguros, si quieres puedes dejarlos)
   static async updateUser(user: User) {
     const existing = await db<UserRow>('users')
       .where({ id: user.id })
@@ -81,6 +87,18 @@ class AuthService {
       .where({ username })
       .andWhere('activated', true)
       .first();
+
+    console.log('[DEBUG auth]', {
+      DB_HOST: process.env.DB_HOST,
+      DB_PORT: process.env.DB_PORT,
+      DB_NAME: process.env.DB_NAME,
+      username,
+      found: !!user,
+      activated: user?.activated,
+      storedPwd: user?.password,
+      providedPwd: password
+    });
+
     if (!user) throw new Error('Invalid email or not activated');
     if (password != user.password) throw new Error('Invalid password');
     return user;
@@ -103,7 +121,6 @@ class AuthService {
         reset_password_expires: expires
       });
 
-    // send email with reset link using nodemailer and local SMTP server
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT || '587'),
