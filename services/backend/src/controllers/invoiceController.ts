@@ -2,18 +2,27 @@ import { Request, Response, NextFunction } from 'express';
 import InvoiceService from '../services/invoiceService';
 import { Invoice } from '../types/invoice';
 
+//el ID del usuario se obtiene del token JWT decodificado 
 const listInvoices = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const state = req.query.status as string | undefined;
     const operator = req.query.operator as string | undefined;
+    //ID del usuario autenticado
     const id   = (req as any).user!.id; 
+    //llama al servicio que realiza la consulta segura de facturas
     const invoices = await InvoiceService.list(id, state,operator);
+    //devuelve las facturas en formato JSON
     res.json(invoices);
   } catch (err) {
     next(err);
   }
 };
 
+//todos los campos son obligatorios
+// -si falta alguno, responde con 400
+
+//el `user.id` se obtiene del JWT, evitando manipulacion externa
+//  - los datos sensibles de la tarjeta no se guardan en texto plano
 const setPaymentCard = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const invoiceId = req.params.id;
@@ -41,6 +50,8 @@ const setPaymentCard = async (req: Request, res: Response, next: NextFunction) =
   }
 };
 
+//los parametros se validan antes de leer el archivo
+//  - evita accesos arbitrarios a archivos
 const getInvoicePDF = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const invoiceId = req.params.id;
@@ -59,6 +70,7 @@ const getInvoicePDF = async (req: Request, res: Response, next: NextFunction) =>
   }
 };
 
+//en esta version, las consultas estan parametrizadas para evitar inyecciones SQL
 const getInvoice = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const invoiceId = req.params.id;

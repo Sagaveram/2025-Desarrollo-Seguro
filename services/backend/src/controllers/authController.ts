@@ -11,6 +11,9 @@ const ping = async (req: Request, res: Response, next: NextFunction) => {
   }
 };
 
+//inicia sesion de un usuario ya registrado y activado
+ //  - Valida credenciales contra la base de datos mediante AuthService
+ //  - Si son correctas, genera y devuelve un JWT y los datos del usuario
 const login = async (req: Request, res: Response, next: NextFunction) => {
   const { username, password } = req.body;
   try {
@@ -22,6 +25,10 @@ const login = async (req: Request, res: Response, next: NextFunction) => {
   }
 };
 
+//Envia un correo de restablecimiento de contraseña
+ //  - Busca al usuario por email
+ //  - Genera un token temporal y lo asocia al usuario
+ //  - Envia un email con un link para restablecer la contraseña
 const forgotPassword = async (req: Request, res: Response, next: NextFunction) => {
   const { email } = req.body;
   try {
@@ -32,6 +39,7 @@ const forgotPassword = async (req: Request, res: Response, next: NextFunction) =
   }
 };
 
+//Permite al usuario restablecer su contraseña utilizando el token recibido por correo
 const resetPassword = async (req: Request, res: Response, next: NextFunction) => {
   const { token, newPassword } = req.body;
   try {
@@ -42,6 +50,8 @@ const resetPassword = async (req: Request, res: Response, next: NextFunction) =>
   }
 };
 
+//Asigna una contraseña inicial al usuario invitado
+ //  - Utiliza el token de invitacion enviado por correo
 const setPassword = async (req: Request, res: Response, next: NextFunction) => {
   const { token, newPassword } = req.body;
   try {
@@ -52,6 +62,9 @@ const setPassword = async (req: Request, res: Response, next: NextFunction) => {
   }
 };
 
+//Crea un nuevo usuario en el sistema
+ //  - Inserta el registro en la base de datos
+ //  - Envia un correo de invitacion con un link para activar la cuenta
 const createUser = async (req: Request, res: Response, next: NextFunction) => {
   const { username, password, email, first_name, last_name } = req.body;
   try {
@@ -69,6 +82,7 @@ const createUser = async (req: Request, res: Response, next: NextFunction) => {
   }
 };
 
+//actualiza los datos de un usuario existente
 const updateUser = async (req: Request, res: Response, next: NextFunction) => {
   const userId = req.params.id;
   const { username, password, email, first_name, last_name } = req.body;

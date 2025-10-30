@@ -11,9 +11,10 @@ const INVITE_TTL = 1000 * 60 * 60 * 24 * 7;
 
 class AuthService {
   /**
-   * Crea un usuario y envía el mail de invitación con template seguro (NO vulnerable a template injection).
+   * crea un usuario y envia el mail de invitacion con template seguro (no vulnerable a template injection)
    */
   static async createUser(user: User) {
+    // verificar si ya existe usuario con ese username o email
     const existing = await db<UserRow>('users')
       .where({ username: user.username })
       .orWhere({ email: user.email })
@@ -34,6 +35,7 @@ class AuthService {
       });
 
     // Mail seguro: solo variables, no ejecuta código
+    // Configurar el transporte de correo (Nodemailer)
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT),
@@ -44,6 +46,8 @@ class AuthService {
     });
 
     const link = `${process.env.FRONTEND_URL}/activate-user?token=${invite_token}&username=${user.username}`;
+    //template seguro (no vulnerable a template injection)
+    //usa variables controladas, no evalua datos del usuario como codigo
     const template = `
       <html>
         <body>
@@ -65,9 +69,8 @@ class AuthService {
     });
   }
 
-  /**
-   * Actualiza los datos de un usuario existente.
-   */
+
+   // actualiza los datos de un usuario existente
   static async updateUser(user: User) {
     const existing = await db<UserRow>('users')
       .where({ id: user.id })
@@ -85,9 +88,8 @@ class AuthService {
     return existing;
   }
 
-  /**
-   * Autentica usuario por username y password, sólo si está activado.
-   */
+
+   //Autentica usuario por username y password, sólo si está activado.
   static async authenticate(username: string, password: string) {
     const user = await db<UserRow>('users')
       .where({ username })
@@ -110,9 +112,8 @@ class AuthService {
     return user;
   }
 
-  /**
-   * Envía mail de recuperación de contraseña.
-   */
+
+   // envia mail de recuperacion de contraseña
   static async sendResetPasswordEmail(email: string) {
     const user = await db<UserRow>('users')
       .where({ email })
@@ -166,9 +167,8 @@ class AuthService {
       });
   }
 
-  /**
-   * Permite al usuario establecer la clave por primera vez usando el token de invitación.
-   */
+
+   // permite al usuario establecer la clave por primera vez usando el token de invitacion
   static async setPassword(token: string, newPassword: string) {
     const row = await db<UserRow>('users')
       .where('invite_token', token)
@@ -185,9 +185,8 @@ class AuthService {
       .where({ id: row.id });
   }
 
-  /**
-   * Genera el JWT para el usuario.
-   */
+
+   //Genera el JWT para el usuario
   static generateJwt(userId: string): string {
     return jwtUtils.generateToken(userId);
   }
