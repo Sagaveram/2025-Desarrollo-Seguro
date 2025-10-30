@@ -6,14 +6,19 @@ import jwtUtils from '../utils/jwt';
 import ejs from 'ejs';
 
 // Constantes de tiempo para tokens
+// RESET_TTL  -> token de reseteo de contraseña
+// INVITE_TTL -> token de invitación 
 const RESET_TTL = 1000 * 60 * 60;
 const INVITE_TTL = 1000 * 60 * 60 * 24 * 7;
 
 class AuthService {
   /**
-   * Crea un usuario y envía el mail de invitación.
-   * VULNERABLE: El HTML del mail usa interpolación directa, permitiendo template injection.
-   * Este código debe estar en main para que el test de seguridad falle.
+   * Crea un usuario y envía el mail de invitación. 
+   * Vulnerabilidad:
+   *    - En el cuerpo del correo HTML, se interpolan directamente 
+   *      valores del usuario sin sanitizacion
+   *    - Esto permite una potencial Template Injection si un atacante
+   *      logra inyectar codigo o expresiones en los campos del usuario
    */
   static async createUser(user: User) {
     const existing = await db<UserRow>('users')
@@ -36,6 +41,7 @@ class AuthService {
       });
 
     // VULNERABLE: inserta datos de usuario directo en HTML (template injection posible)
+    // Configurar el transporte de correo (SMTP)
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT),
@@ -47,6 +53,10 @@ class AuthService {
 
     const link = `${process.env.FRONTEND_URL}/activate-user?token=${invite_token}&username=${user.username}`;
     // OJO: Esto ejecuta código EJS si viene en el dato
+    // Generar el HTML del correo
+    // Vulnerable: se interpolan directamente datos de usuario.
+    // Si el atacante introduce expresiones como {{7*7}} o <%= %>, 
+    // podrian ejecutarse si el motor de templates las interpreta
     const htmlBody = `
       <html>
         <body>
@@ -64,7 +74,10 @@ class AuthService {
     });
   }
 
-  // El resto de los métodos igual que antes (seguros, si quieres puedes dejarlos)
+  /**
+   * Autentica a un usuario activo mediante usuario y contraseña.
+   *  - Incluye logs de depuracion para validar parametros y estado
+   */
   static async updateUser(user: User) {
     const existing = await db<UserRow>('users')
       .where({ id: user.id })
@@ -88,6 +101,7 @@ class AuthService {
       .andWhere('activated', true)
       .first();
 
+    // Log de diagnostico 
     console.log('[DEBUG auth]', {
       DB_HOST: process.env.DB_HOST,
       DB_PORT: process.env.DB_PORT,
@@ -104,6 +118,7 @@ class AuthService {
     return user;
   }
 
+  //Envia un correo para restablecer contraseña a un usuario activo
   static async sendResetPasswordEmail(email: string) {
     const user = await db<UserRow>('users')
       .where({ email })
@@ -114,6 +129,7 @@ class AuthService {
     const token = crypto.randomBytes(6).toString('hex');
     const expires = new Date(Date.now() + RESET_TTL);
 
+    //Actualiza el token de reset en la base de datos
     await db('users')
       .where({ id: user.id })
       .update({
@@ -121,6 +137,7 @@ class AuthService {
         reset_password_expires: expires
       });
 
+    //Configura transporte SMTP
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT || '587'),
@@ -129,8 +146,10 @@ class AuthService {
         pass: process.env.SMTP_PASS
       }
     });
-
+    //Construye link de reseteo
     const link = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+    
+    //Envia el correo con el enlace
     await transporter.sendMail({
       to: user.email,
       subject: 'Your password reset link',
@@ -138,6 +157,7 @@ class AuthService {
     });
   }
 
+  //Restablece la contraseña del usuario, validando token y expiracion
   static async resetPassword(token: string, newPassword: string) {
     const row = await db<UserRow>('users')
       .where('reset_password_token', token)
@@ -154,6 +174,7 @@ class AuthService {
       });
   }
 
+  //Asigna una contraseña a un usuario invitado, validando token de invitacion
   static async setPassword(token: string, newPassword: string) {
     const row = await db<UserRow>('users')
       .where('invite_token', token)
@@ -170,6 +191,7 @@ class AuthService {
       .where({ id: row.id });
   }
 
+  //Genera un JWT para un usuario autenticado
   static generateJwt(userId: string): string {
     return jwtUtils.generateToken(userId);
   }
